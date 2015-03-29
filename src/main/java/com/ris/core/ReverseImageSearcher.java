@@ -1,5 +1,8 @@
 package com.ris.core;
 
+import java.awt.Graphics;
+import java.awt.image.BufferedImage;
+import java.awt.image.Raster;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
@@ -12,6 +15,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.jtransforms.fft.FloatFFT_2D;
 
 import com.google.common.io.CharStreams;
 import com.google.common.net.HttpHeaders;
@@ -78,6 +83,86 @@ public class ReverseImageSearcher {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Score the level of detail in the image. Calculated score could be used to
+	 * compare quality of the images with the same content. Generally bigger
+	 * score means better image quality (higher level of details).
+	 * <p>
+	 * This method uses <a
+	 * href="http://en.wikipedia.org/wiki/Discrete_Fourier_transform">DFT</a>
+	 * algorithm to get image frequencies breakdown and then collects highest
+	 * frequency estimations. Final score is calculated basing on these
+	 * estimations and the size of provided image.
+	 * 
+	 * @param image
+	 *            Source image for analyzing.
+	 * @return Estimation of the level of details in provided image.
+	 * @see <a
+	 *      href="http://en.wikipedia.org/wiki/Discrete_Fourier_transform">Discrete
+	 *      Fourier transform</a>
+	 */
+	public int scoreDetailLevel(BufferedImage image) {
+		int width = image.getWidth();
+		int height = image.getHeight();
+
+		// 1. Convert to grayscale image
+		BufferedImage grayscaleImage = new BufferedImage(width, height, BufferedImage.TYPE_BYTE_GRAY);
+		Graphics graphics = grayscaleImage.getGraphics();
+		graphics.drawImage(image, 0, 0, null);
+		graphics.dispose();
+
+		// 2. Convert to 2D array
+		float raw[][] = new float[width][height * 2]; // Double-sized for DFT calculation
+		Raster raster = grayscaleImage.getData();
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				raw[x][y] = raster.getSample(x, y, 0);
+			}
+		}
+
+		// 3. Calculate DFT in-place
+		FloatFFT_2D fft2D = new FloatFFT_2D(width, height);
+		fft2D.realForwardFull(raw);
+
+		// 4. Collect frequency estimations from 2D to 1D array
+		int size = width % 2 == 0 ? width / 2 : width / 2 + 1;
+		int freq[] = new int[size + 1];
+		float yMultiplier = size / height;
+		for (int y = 0; y < height; y++) {
+			int yDistance = (int) (y * yMultiplier);
+			for (int x = 0; x < size; x++) {
+				int distance = Math.max(x, yDistance);
+				freq[distance] += Math.abs(raw[x][y]);
+			}
+			for (int x = size; x < width; x++) {
+				int xDistance = width - x;
+				int distance = Math.max(xDistance, yDistance);
+				freq[distance] += Math.abs(raw[x][y]);
+			}
+		}
+
+		// 5. Normalize
+		float multiplier = 10000f / freq[0];
+		for (int i = 0; i < size; i++) {
+			freq[i] *= multiplier;
+		}
+
+		// 6. Calculate final score
+		int score = 0;
+		int count = 3; // Count of samples
+		for (int i = size - 1; i > 0; i--) {
+			if (freq[i] > size + size) { // Threshold
+				count--;
+				score += freq[i] * i / 100;
+			}
+			if (count == 0) {
+				break;
+			}
+		}
+
+		return score;
 	}
 
 	private HttpURLConnection prepareConnection(URL url) throws IOException {

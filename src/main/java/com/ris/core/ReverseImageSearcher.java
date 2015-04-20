@@ -34,6 +34,7 @@ public class ReverseImageSearcher {
 
 	private static final Pattern	RESULT_PAGE_URL_PATTERN		= Pattern.compile("href=\"(\\/search\\?[^\\\"]*?tbs=simg:[^,]+?&amp;.+?)\"");
 	private static final Pattern	IMAGE_URL_PATTERN			= Pattern.compile("imgres\\?imgurl=(http.+?)&amp;imgrefurl=");
+	private static final Pattern	IMAGE_SIZE_PATTERN			= Pattern.compile("class=\\\"rg_an\\\">(\\d+)&nbsp;&#215;&nbsp;(\\d+)<\\/span");
 
 	/**
 	 * Search for image copies with different size using Google search engine.
@@ -42,15 +43,16 @@ public class ReverseImageSearcher {
 	 *
 	 * @param sourceImageUrl
 	 *            URL of source image for search.
-	 * @return {@link List} with URLs of alternative images across the Internet.
-	 *         Better resolution images goes in the beginning of the list, worst
-	 *         - in the end, but this sorting is non-rigid.
+	 * @return {@link List} with {@link ImageDescriptor}s of alternative images
+	 *         across the Internet. Images with bigger size goes in the
+	 *         beginning of the list, lesser - in the end, but this sorting is
+	 *         non-rigid.
 	 * @throws InterruptedException
 	 * @throws ExecutionException
 	 * @throws TimeoutException
 	 * @throws IOException
 	 */
-	public List<String> findAlternatives(String sourceImageUrl) throws InterruptedException, ExecutionException, TimeoutException, IOException {
+	public List<ImageDescriptor> findAlternatives(String sourceImageUrl) throws InterruptedException, ExecutionException, TimeoutException, IOException {
 
 		// 1. Run reverse image search in Google
 		URL url = new URL(GOOGLE_IMG_SEARCH_PREFIX + sourceImageUrl); // sourceImageUrl encoding will be done automatically
@@ -60,11 +62,11 @@ public class ReverseImageSearcher {
 		String redirectedHost = conn.getURL().getHost();
 
 		// 2. Find a link to a results page
-		Matcher matcher = RESULT_PAGE_URL_PATTERN.matcher(response);
-		if (!matcher.find()) {
+		Matcher resultPageMatcher = RESULT_PAGE_URL_PATTERN.matcher(response);
+		if (!resultPageMatcher.find()) {
 			throw new IOException("Result page URL not found");
 		}
-		String href = matcher.group(1).replaceAll("&amp;", "&");
+		String href = resultPageMatcher.group(1).replaceAll("&amp;", "&");
 
 		// 3. Open the results page
 		url = new URL("https://" + redirectedHost + href);
@@ -72,14 +74,23 @@ public class ReverseImageSearcher {
 		conn.connect();
 		response = getResponseString(conn);
 
-		// 4. Extract image URLs
-		matcher = IMAGE_URL_PATTERN.matcher(response);
-		List<String> result = new ArrayList<>();
-		while (matcher.find()) {
-			href = matcher.group(1);
+		// 4. Extract image URLs & sizes
+		Matcher imageUrlMatcher = IMAGE_URL_PATTERN.matcher(response);
+		Matcher imageSizeMatcher = IMAGE_SIZE_PATTERN.matcher(response);
+		List<ImageDescriptor> result = new ArrayList<>();
+		while (imageUrlMatcher.find()) {
+			href = imageUrlMatcher.group(1);
 			href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
 			href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
-			result.add(href);
+
+			if (!imageSizeMatcher.find()) {
+				throw new IOException("Failed to parse results page");
+			}
+
+			int width = Integer.parseInt(imageSizeMatcher.group(1));
+			int height = Integer.parseInt(imageSizeMatcher.group(2));
+			ImageDescriptor descriptor = new ImageDescriptor(href, width, height);
+			result.add(descriptor);
 		}
 
 		return result;

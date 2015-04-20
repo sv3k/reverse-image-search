@@ -1,6 +1,6 @@
 package com.ris.core;
 
-import java.awt.Graphics;
+import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.awt.image.Raster;
 import java.io.IOException;
@@ -22,19 +22,38 @@ import com.google.common.io.CharStreams;
 import com.google.common.net.HttpHeaders;
 
 /**
- * Reverse Image Searcher.
+ * Reverse image searcher.
  *
  * @author Anton Gorbunov
  * @since 2015-03-07
  */
 public class ReverseImageSearcher {
 
-	private static final String		GOOGLE_IMG_SEARCH_PREFIX	= "https://images.google.com/searchbyimage?image_url=";
-	private static final String		USER_AGENT_HEADER_VALUE		= "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.115 Safari/537.36";
+	private static final String							GOOGLE_IMG_SEARCH_PREFIX	= "https://images.google.com/searchbyimage?image_url=";
+	private static final String							USER_AGENT_HEADER_VALUE		= "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.115 Safari/537.36";
 
-	private static final Pattern	RESULT_PAGE_URL_PATTERN		= Pattern.compile("href=\"(\\/search\\?[^\\\"]*?tbs=simg:[^,]+?&amp;.+?)\"");
-	private static final Pattern	IMAGE_URL_PATTERN			= Pattern.compile("imgres\\?imgurl=(http.+?)&amp;imgrefurl=");
-	private static final Pattern	IMAGE_SIZE_PATTERN			= Pattern.compile("class=\\\"rg_an\\\">(\\d+)&nbsp;&#215;&nbsp;(\\d+)<\\/span");
+	private static final Pattern						RESULT_PAGE_URL_PATTERN		= Pattern.compile("href=\"(\\/search\\?[^\\\"]*?tbs=simg:[^,]+?&amp;.+?)\"");
+	private static final Pattern						IMAGE_URL_PATTERN			= Pattern.compile("imgres\\?imgurl=(http.+?)&amp;imgrefurl=");
+	private static final Pattern						IMAGE_SIZE_PATTERN			= Pattern.compile("class=\\\"rg_an\\\">(\\d+)&nbsp;&#215;&nbsp;(\\d+)<\\/span");
+
+	private final ConfigurationBuilder.Configuration	configuration;
+
+	/**
+	 * Create reverse image searcher instance with default configuration.
+	 */
+	public ReverseImageSearcher() {
+		this.configuration = new ConfigurationBuilder().build();
+	}
+
+	/**
+	 * Create reverse image searcher instance with custom configuration.
+	 * 
+	 * @param configuration
+	 *            custom configuration for searcher.
+	 */
+	public ReverseImageSearcher(ConfigurationBuilder.Configuration configuration) {
+		this.configuration = configuration;
+	}
 
 	/**
 	 * Search for image copies with different size using Google search engine.
@@ -91,6 +110,10 @@ public class ReverseImageSearcher {
 			int height = Integer.parseInt(imageSizeMatcher.group(2));
 			ImageDescriptor descriptor = new ImageDescriptor(href, width, height);
 			result.add(descriptor);
+
+			if (result.size() == configuration.getAlternativesCount()) {
+				break;
+			}
 		}
 
 		return result;
@@ -162,8 +185,7 @@ public class ReverseImageSearcher {
 
 		// 6. Calculate final score
 		int score = 0;
-		int count = 3; // Count of highest frequency samples
-		for (int i = size - 1; i > size - 1 - count; i--) {
+		for (int i = size - configuration.getSamplesCount(); i < size; i++) {
 			score += freq[i];
 		}
 

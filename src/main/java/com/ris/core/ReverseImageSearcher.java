@@ -90,17 +90,17 @@ public class ReverseImageSearcher {
 	 * compare quality of the images with the same content. Generally bigger
 	 * score means better image quality (higher level of details).
 	 * <p>
-	 * This method uses <a
-	 * href="http://en.wikipedia.org/wiki/Discrete_Fourier_transform">DFT</a>
+	 * This method uses <a href =
+	 * "http://en.wikipedia.org/wiki/Discrete_Fourier_transform">DFT</a>
 	 * algorithm to get image frequencies breakdown and then collects highest
 	 * frequency estimations. Final score is calculated basing on these
-	 * estimations and the size of provided image.
+	 * estimations.
 	 * 
 	 * @param image
 	 *            Source image for analyzing.
 	 * @return Estimation of the level of details in provided image.
-	 * @see <a
-	 *      href="http://en.wikipedia.org/wiki/Discrete_Fourier_transform">Discrete
+	 * @see <a href =
+	 *      "http://en.wikipedia.org/wiki/Discrete_Fourier_transform">Discrete
 	 *      Fourier transform</a>
 	 */
 	public int scoreDetailLevel(BufferedImage image) {
@@ -151,15 +151,9 @@ public class ReverseImageSearcher {
 
 		// 6. Calculate final score
 		int score = 0;
-		int count = 3; // Count of samples
-		for (int i = size - 1; i > 0; i--) {
-			if (freq[i] > size + size) { // Threshold
-				count--;
-				score += freq[i] * i / 100;
-			}
-			if (count == 0) {
-				break;
-			}
+		int count = 3; // Count of highest frequency samples
+		for (int i = size - 1; i > size - 1 - count; i--) {
+			score += freq[i];
 		}
 
 		return score;

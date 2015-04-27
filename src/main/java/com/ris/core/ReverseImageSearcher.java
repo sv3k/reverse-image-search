@@ -11,8 +11,6 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,57 +64,60 @@ public class ReverseImageSearcher {
 	 *         across the Internet. Images with bigger size goes in the
 	 *         beginning of the list, lesser - in the end, but this sorting is
 	 *         non-rigid.
-	 * @throws InterruptedException
-	 * @throws ExecutionException
-	 * @throws TimeoutException
-	 * @throws IOException
+	 * @throws ImageSearchException
+	 *             if something went wrong.
 	 */
-	public List<ImageDescriptor> findAlternatives(String sourceImageUrl) throws InterruptedException, ExecutionException, TimeoutException, IOException {
+	public List<ImageDescriptor> findAlternatives(String sourceImageUrl) {
+		try {
 
-		// 1. Run reverse image search in Google
-		URL url = new URL(GOOGLE_IMG_SEARCH_PREFIX + sourceImageUrl); // sourceImageUrl encoding will be done automatically
-		HttpURLConnection conn = prepareConnection(url, true);
-		conn.connect();
-		String response = getResponseString(conn);
-		String redirectedHost = conn.getURL().getHost();
+			// 1. Run reverse image search in Google
+			URL url = new URL(GOOGLE_IMG_SEARCH_PREFIX + sourceImageUrl); // sourceImageUrl encoding will be done automatically
+			HttpURLConnection conn = prepareConnection(url, true);
+			conn.connect();
+			String response = getResponseString(conn);
+			String redirectedHost = conn.getURL().getHost();
 
-		// 2. Find a link to a results page
-		Matcher resultPageMatcher = RESULT_PAGE_URL_PATTERN.matcher(response);
-		if (!resultPageMatcher.find()) {
-			throw new IOException("Result page URL not found");
-		}
-		String href = resultPageMatcher.group(1).replaceAll("&amp;", "&");
+			// 2. Find a link to a results page
+			Matcher resultPageMatcher = RESULT_PAGE_URL_PATTERN.matcher(response);
+			if (!resultPageMatcher.find()) {
+				throw new ImageSearchException("Result page URL not found");
+			}
+			String href = resultPageMatcher.group(1).replaceAll("&amp;", "&");
 
-		// 3. Open the results page
-		url = new URL("https://" + redirectedHost + href);
-		conn = prepareConnection(url);
-		conn.connect();
-		response = getResponseString(conn);
+			// 3. Open the results page
+			url = new URL("https://" + redirectedHost + href);
+			conn = prepareConnection(url);
+			conn.connect();
+			response = getResponseString(conn);
 
-		// 4. Extract image URLs & sizes
-		Matcher imageUrlMatcher = IMAGE_URL_PATTERN.matcher(response);
-		Matcher imageSizeMatcher = IMAGE_SIZE_PATTERN.matcher(response);
-		List<ImageDescriptor> result = new ArrayList<>();
-		while (imageUrlMatcher.find()) {
-			href = imageUrlMatcher.group(1);
-			href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
-			href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
+			// 4. Extract image URLs & sizes
+			Matcher imageUrlMatcher = IMAGE_URL_PATTERN.matcher(response);
+			Matcher imageSizeMatcher = IMAGE_SIZE_PATTERN.matcher(response);
+			List<ImageDescriptor> result = new ArrayList<>();
+			while (imageUrlMatcher.find()) {
+				href = imageUrlMatcher.group(1);
+				href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
+				href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
 
-			if (!imageSizeMatcher.find()) {
-				throw new IOException("Failed to parse results page");
+				if (!imageSizeMatcher.find()) {
+					throw new ImageSearchException("Failed to parse results page");
+				}
+
+				int width = Integer.parseInt(imageSizeMatcher.group(1));
+				int height = Integer.parseInt(imageSizeMatcher.group(2));
+				ImageDescriptor descriptor = new ImageDescriptor(href, width, height);
+				result.add(descriptor);
+
+				if (result.size() == configuration.getAlternativesCount()) {
+					break;
+				}
 			}
 
-			int width = Integer.parseInt(imageSizeMatcher.group(1));
-			int height = Integer.parseInt(imageSizeMatcher.group(2));
-			ImageDescriptor descriptor = new ImageDescriptor(href, width, height);
-			result.add(descriptor);
+			return result;
 
-			if (result.size() == configuration.getAlternativesCount()) {
-				break;
-			}
+		} catch (IOException e) {
+			throw new ImageSearchException("Failed to find image alternatives", e);
 		}
-
-		return result;
 	}
 
 	/**
@@ -192,24 +193,32 @@ public class ReverseImageSearcher {
 		return score;
 	}
 
-	private HttpURLConnection prepareConnection(URL url) throws IOException {
+	private HttpURLConnection prepareConnection(URL url) {
 		return prepareConnection(url, false);
 	}
 
-	private HttpURLConnection prepareConnection(URL url, boolean followRedirects) throws IOException {
-		HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-		conn.addRequestProperty(HttpHeaders.USER_AGENT, USER_AGENT_HEADER_VALUE);
-		conn.setInstanceFollowRedirects(followRedirects);
-		return conn;
+	private HttpURLConnection prepareConnection(URL url, boolean followRedirects) {
+		try {
+			HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+			conn.addRequestProperty(HttpHeaders.USER_AGENT, USER_AGENT_HEADER_VALUE);
+			conn.setInstanceFollowRedirects(followRedirects);
+			return conn;
+		} catch (IOException e) {
+			throw new ImageSearchException("Failed to prepare HTTP connection", e);
+		}
 	}
 
-	private String getResponseString(HttpURLConnection connection) throws IOException {
-		if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
-			throw new IOException("Unexpected response status code " + connection.getResponseCode());
-		}
+	private String getResponseString(HttpURLConnection connection) {
+		try {
+			if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
+				throw new ImageSearchException("Unexpected response status code " + connection.getResponseCode());
+			}
 
-		try (InputStreamReader streamReader = new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8)) {
-			return CharStreams.toString(streamReader);
+			try (InputStreamReader streamReader = new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8)) {
+				return CharStreams.toString(streamReader);
+			}
+		} catch (IOException e) {
+			throw new ImageSearchException("Failed to get HTTP response", e);
 		}
 	}
 }

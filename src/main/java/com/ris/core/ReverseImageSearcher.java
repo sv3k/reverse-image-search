@@ -60,14 +60,14 @@ public class ReverseImageSearcher {
 	 *
 	 * @param sourceImageUrl
 	 *            URL of source image for search.
-	 * @return {@link List} with {@link ImageDescriptor}s of alternative images
+	 * @return {@link List} with {@link WebImage}s of alternative images
 	 *         across the Internet. Images with bigger size goes in the
 	 *         beginning of the list, lesser - in the end, but this sorting is
 	 *         non-rigid.
 	 * @throws ImageSearchException
 	 *             if something went wrong.
 	 */
-	public List<ImageDescriptor> findAlternatives(String sourceImageUrl) {
+	public List<WebImage> findAlternatives(String sourceImageUrl) {
 		try {
 
 			// 1. Run reverse image search in Google
@@ -93,7 +93,7 @@ public class ReverseImageSearcher {
 			// 4. Extract image URLs & sizes
 			Matcher imageUrlMatcher = IMAGE_URL_PATTERN.matcher(response);
 			Matcher imageSizeMatcher = IMAGE_SIZE_PATTERN.matcher(response);
-			List<ImageDescriptor> result = new ArrayList<>();
+			List<WebImage> result = new ArrayList<>();
 			while (imageUrlMatcher.find()) {
 				href = imageUrlMatcher.group(1);
 				href = URLDecoder.decode(href, StandardCharsets.UTF_8.name());
@@ -105,7 +105,7 @@ public class ReverseImageSearcher {
 
 				int width = Integer.parseInt(imageSizeMatcher.group(1));
 				int height = Integer.parseInt(imageSizeMatcher.group(2));
-				ImageDescriptor descriptor = new ImageDescriptor(href, width, height);
+				WebImage descriptor = new WebImage(href, width, height);
 				result.add(descriptor);
 
 				if (result.size() == configuration.getAlternativesCount()) {

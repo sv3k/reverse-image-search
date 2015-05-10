@@ -11,10 +11,14 @@ import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.imgscalr.Scalr;
 import org.jtransforms.fft.FloatFFT_2D;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.common.io.CharStreams;
 import com.google.common.net.HttpHeaders;
@@ -26,6 +30,8 @@ import com.google.common.net.HttpHeaders;
  * @since 2015-03-07
  */
 public class ReverseImageSearcher {
+
+	private static final Logger							log							= LoggerFactory.getLogger(ReverseImageSearcher.class);
 
 	private static final String							GOOGLE_IMG_SEARCH_PREFIX	= "https://images.google.com/searchbyimage?image_url=";
 	private static final String							USER_AGENT_HEADER_VALUE		= "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.115 Safari/537.36";
@@ -51,6 +57,72 @@ public class ReverseImageSearcher {
 	 */
 	public ReverseImageSearcher(ConfigurationBuilder.Configuration configuration) {
 		this.configuration = configuration;
+	}
+
+	/**
+	 * Search for possible best quality image copy using Google search engine.
+	 * Found image can contain small differences in aspect ratio and/or in
+	 * picture itself - watermarks, small logos, etc.
+	 * 
+	 * @param sourceImageUrl
+	 *            URL of source image for search.
+	 * @return {@link WebImage} with the highest calculated quality score.
+	 * @throws IOException
+	 *             if something went wrong.
+	 */
+	public WebImage findBestAlternative(String sourceImageUrl) throws IOException {
+		WebImage sourceImage = new WebImage(sourceImageUrl);
+
+		List<WebImage> alternatives = findAlternatives(sourceImageUrl);
+		if (alternatives.isEmpty()) {
+			return sourceImage;
+		}
+
+		List<WebImage> images = new ArrayList<>(alternatives.size() + 1);
+		images.add(sourceImage);
+		images.addAll(alternatives);
+
+		// Find the biggest dimension
+		int maxDimension = 0;
+		for (WebImage image : images) {
+			int imgDimension = Math.max(image.getWidth(), image.getHeight());
+			if (imgDimension > maxDimension) {
+				maxDimension = imgDimension;
+			}
+		}
+
+		long highest = 0;
+		WebImage best = sourceImage;
+		for (WebImage image : images) {
+			log.debug("Processing image {}", image);
+			BufferedImage img;
+
+			long start = System.nanoTime();
+			try {
+				img = image.getImage();
+			} catch (IOException e) {
+				log.warn("Failed to download image: {}, skipping", image);
+				continue;
+			}
+			log.trace("Download time: {}ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+
+			start = System.nanoTime();
+			BufferedImage resized = Scalr.resize(img, maxDimension); // Resize to the biggest size
+			log.trace("Resize time: {}ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+
+			start = System.nanoTime();
+			long score = scoreDetailLevel(resized);
+			log.trace("Score time: {}ms", TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
+
+			log.debug("Score: {}", score);
+
+			if (score > highest) {
+				highest = score;
+				best = image;
+			}
+		}
+
+		return best;
 	}
 
 	/**
@@ -122,7 +194,7 @@ public class ReverseImageSearcher {
 	 * <p>
 	 * This method uses <a href =
 	 * "http://en.wikipedia.org/wiki/Discrete_Fourier_transform">DFT</a>
-	 * algorithm to get image frequencies breakdown and then collects highest
+	 * algorithm to get image frequencies breakdown and then collects all
 	 * frequency estimations. Final score is calculated basing on these
 	 * estimations.
 	 * 
@@ -133,7 +205,7 @@ public class ReverseImageSearcher {
 	 *      "http://en.wikipedia.org/wiki/Discrete_Fourier_transform">Discrete
 	 *      Fourier transform</a>
 	 */
-	public int scoreDetailLevel(BufferedImage image) {
+	public long scoreDetailLevel(BufferedImage image) {
 		int width = image.getWidth();
 		int height = image.getHeight();
 
@@ -180,8 +252,8 @@ public class ReverseImageSearcher {
 		}
 
 		// 6. Calculate final score
-		int score = 0;
-		for (int i = size - configuration.getSamplesCount(); i < size; i++) {
+		long score = 0;
+		for (int i = 1; i < size; i++) {
 			score += freq[i];
 		}
 

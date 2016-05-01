@@ -37,8 +37,8 @@ public class ReverseImageSearcher {
 	private static final String							USER_AGENT_HEADER_VALUE		= "Mozilla/5.0 (Windows NT 6.3; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.115 Safari/537.36";
 
 	private static final Pattern						RESULT_PAGE_URL_PATTERN		= Pattern.compile("href=\"(\\/search\\?[^\\\"]*?tbs=simg:[^,]+?&amp;.+?)\"");
-	private static final Pattern						IMAGE_URL_PATTERN			= Pattern.compile("imgres\\?imgurl=(http.+?)&amp;imgrefurl=");
-	private static final Pattern						IMAGE_SIZE_PATTERN			= Pattern.compile("class=\\\"rg_an\\\">(\\d+)&nbsp;&#215;&nbsp;(\\d+)<\\/span");
+	private static final Pattern						IMAGE_URL_PATTERN			= Pattern.compile("\\\"ou\\\":\\\"(http.+?)\\\"");
+	private static final Pattern						IMAGE_SIZE_PATTERN			= Pattern.compile("\\\"oh\\\":(?<height>\\d+),\\\"ou\\\":\\\"http.+?\\\",\\\"ow\\\":(?<width>\\d+)");
 
 	private final ConfigurationBuilder.Configuration	configuration;
 
@@ -157,6 +157,7 @@ public class ReverseImageSearcher {
 
 		// 3. Open the results page
 		url = new URL("https://" + redirectedHost + href);
+		log.debug("Results page: {}", url);
 		conn = prepareConnection(url);
 		conn.connect();
 		response = getResponseString(conn);
@@ -174,8 +175,8 @@ public class ReverseImageSearcher {
 				throw new IOException("Failed to parse results page");
 			}
 
-			int width = Integer.parseInt(imageSizeMatcher.group(1));
-			int height = Integer.parseInt(imageSizeMatcher.group(2));
+			int width = Integer.parseInt(imageSizeMatcher.group("width"));
+			int height = Integer.parseInt(imageSizeMatcher.group("height"));
 			WebImage descriptor = new WebImage(href, width, height);
 			result.add(descriptor);
 
@@ -258,6 +259,10 @@ public class ReverseImageSearcher {
 		}
 
 		return score;
+	}
+
+	public ConfigurationBuilder.Configuration getConfiguration() {
+		return configuration;
 	}
 
 	private HttpURLConnection prepareConnection(URL url) throws IOException {
